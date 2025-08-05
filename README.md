@@ -37,62 +37,86 @@ backup/
 
 ---
 
-## 📜 1. Hoofdscript: `borg_dataset_backup.sh`
+## 📜 1. Hoofdscript: `backup_dataset.sh`
+
+1. Valideert invoer (één argument: de datasetnaam).
+2. Laadt een configuratiebestand dat bij die dataset hoort.
+3. Maakt een backup via borg, een populair back-upprogramma.
+4. Logt alles naar bestand én terminal.
+5. Past retentie toe door oude backups op te schonen (prune).
 
 ```bash
 #!/usr/bin/env bash
+
 set -euo pipefail
+# -e: Stop het script als een commando faalt
+# -u: Stop als een ongedefinieerde variabele wordt gebruikt
+# -o pipefail: Zorgt dat het script faalt als een commando in een pipe faalt
 
-# Controleer of er exact 1 argument is (dataset naam)
+# Controleer of er precies 1 argument is meegegeven (de naam van de dataset)
 if [ $# -ne 1 ]; then
-  echo "Usage: $0 <dataset>" >&2
-  exit 1
+  echo "Usage: $0 <dataset>" >&2  # $0 is de naam van het script zelf
+  exit 1  # Foutcode 1 = verkeerd gebruik
 fi
 
-DATASET="$1"
-CONFIG="configs/${DATASET}.env"
-LOGFILE="logs/${DATASET}.log"
+DATASET="$1"  # Het eerste (en enige) argument is de datasetnaam
+CONFIG="configs/${DATASET}.env"  # Pad naar de config file voor deze dataset
+LOGFILE="logs/${DATASET}.log"    # Pad naar de logfile voor deze dataset
 
-# Controleer of de configuratie bestaat
+# Controleer of de config file bestaat
 if [ ! -f "$CONFIG" ]; then
-  echo "❌ Config file $CONFIG not found" >&2
-  exit 2
+  echo "❌ Config file $CONFIG not found" >&2  # >&2 stuurt output naar stderr
+  exit 2  # Foutcode 2 = config niet gevonden
 fi
 
-# Zorg dat de log-map bestaat
+# Zorg dat de logs directory bestaat (maakt deze aan indien nodig)
 mkdir -p logs
 
-# Log alles naar zowel console als logfile
+# Stuur alle standaard output én fouten zowel naar console als naar logbestand
 exec > >(tee -a "$LOGFILE") 2>&1
+# 'tee -a' schrijft zowel naar stdout als naar het logbestand (append-modus)
+# '2>&1' stuurt stderr naar stdout, zodat alles gelogd wordt
 
-# Laad de environment-variabelen van de gekozen dataset
+# Laad de environment-variabelen uit het .env bestand
 set -a
-source "$CONFIG"
+source "$CONFIG"  # Voert het configbestand uit en laadt de variabelen
 set +a
+# 'set -a' zorgt dat alle gedefinieerde variabelen automatisch worden geëxporteerd
 
-# Handige functie om tijd en context te loggen
+# Defineer een helper-functie om gelogde info-berichten te schrijven met timestamp
 info() {
   printf "\n[%s] %s: %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$DATASET" "$*"
+  # "$*" geeft alle argumenten mee aan de functie
 }
 
+# Begin van de backup, geef info-output
 info "🔐 Backup gestart voor dataset '$DATASET'"
 
-# Maak het backup-archive aan
+# Maak een backup-archive met borg
 borg create \
   --verbose --stats --compression lz4 --exclude-caches \
   ::"{hostname}-${DATASET}-{now:%Y-%m-%d_%H:%M:%S}" \
   $BACKUP_PATHS
+# --verbose: gedetailleerde output
+# --stats: toon statistieken na afloop
+# --compression lz4: gebruik lz4 compressie (snel, minder compact)
+# --exclude-caches: sluit cache mappen uit
+# Archive naam bevat hostname, datasetnaam en timestamp
+# $BACKUP_PATHS moet in het .env bestand gedefinieerd zijn
 
 info "🧹 Verwijderen van oude backups (prune)"
 
-# Prune oude backups volgens retentiebeleid
+# Prune oude backups volgens een retentiebeleid
 borg prune \
   --list --prefix "{hostname}-${DATASET}-" \
   --keep-daily "$PRUNE_KEEP_DAILY" \
   --keep-weekly "$PRUNE_KEEP_WEEKLY" \
   --keep-monthly "$PRUNE_KEEP_MONTHLY"
+# Houdt een bepaald aantal dagelijkse, wekelijkse en maandelijkse backups bij
+# Retentieparameters komen ook uit het .env bestand
 
 info "✅ Backup voor '$DATASET' voltooid"
+
 ```
 
 ---
@@ -138,23 +162,32 @@ export PRUNE_KEEP_MONTHLY=12
 
 ```bash
 #!/bin/bash
-set -euo pipefail
 
+set -euo pipefail
+# -e: Stop het script als een commando faalt
+# -u: Stop als een ongedefinieerde variabele wordt gebruikt
+# -o pipefail: Zorgt dat het script faalt als een commando in een pipe faalt
+
+# Zorg dat de logs-map bestaat (voor het geval backup_dataset.sh logs schrijft)
 mkdir -p logs
 
-DATASET_FILE="datasets.list"
+DATASET_FILE="datasets.list"  # Bestandsnaam met lijst van datasets (één per regel)
 
+# Controleer of het bestand met datasets bestaat
 if [ ! -f "$DATASET_FILE" ]; then
   echo "❌ Bestand $DATASET_FILE niet gevonden"
-  exit 1
+  exit 1  # Exit met foutcode 1 als het bestand ontbreekt
 fi
 
-# Lees regels in array
+# Lees alle regels uit het bestand in een array genaamd DATASETS
 mapfile -t DATASETS < "$DATASET_FILE"
+# mapfile leest het bestand regel voor regel en slaat het op in een bash array (-t verwijdert newline aan het einde van elke regel)
 
+# Loop door elke dataset en start een backup
 for dataset in "${DATASETS[@]}"; do
   echo "📦 Start backup voor $dataset"
-  ./borg_dataset_backup.sh "$dataset"
+  ./backup_dataset.sh "$dataset"
+  # Roept het andere script aan (dat je eerder liet zien), met de datasetnaam als argument
 done
 ```
 
