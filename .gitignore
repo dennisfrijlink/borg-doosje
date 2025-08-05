@@ -1,0 +1,20 @@
+# 📦 Configuratiebestanden met gevoelige data
+configs/*.env
+
+# 🗂 Lijst met datasets (machine-specifiek)
+datasets.list
+
+# 🪵 Logbestanden (tijdelijke output)
+logs/
+*.log
+
+# 💻 Systeembestanden
+.DS_Store
+Thumbs.db
+
+# 🛠 Editor-specifieke bestanden
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
